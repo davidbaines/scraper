@@ -18,6 +18,19 @@ def get_vrefs():
         return [line.strip() for line in vref_f.readlines()]
 
 
+def get_vref_dict() -> dict:
+    vref_dict = {}
+    vrefs = get_vrefs()
+    for book, chapter,verse in parse_vref(vref):
+        if book not in vref_dict:
+            vref_dict[book] = {}
+        if chapter not in vref_dict[book]:
+            vref_dict[book][chapter] = []
+        
+        vref_dict[book][chapter].append(verse)
+    return vref_dict
+
+
 def get_bible_files(folder):
     bible_files = [file for file in folder.glob("*.txt")]
     return bible_files
@@ -39,10 +52,24 @@ def parse_vref(vref):
 def get_max_chapters() -> dict:
     vrefs = get_vrefs()
     max_chapters = {}
-    for vref in vrefs:
+    for vref in vrefs:  # vrefs should be global
         book, chapter, _ = parse_vref(vref)
         max_chapters[book] = chapter
     return max_chapters
+
+def get_max_chapter(book) -> dict:
+    vref_dict = get_vref_dict()
+    return max(vref_dict[book])
+    
+
+def get_max_verse(book, chapter) -> int:
+    vref_dict = get_vref_dict()
+    return max(vref_dict[book][chapter])
+
+
+def get_files_from_folder(folder,ext):
+    files = [file for file in folder.glob(f"*{ext}") if file.is_file]
+    return files
 
 
 def download_url(url) -> None:
@@ -79,101 +106,16 @@ def simplify_html(html_file):
     return str(soup)
 
 
-# def parse_html(html_file, usfm_data):
-#     pattern = r"(?P<book_id>.{3})\.(?P<chapter>\d+).(?P<verse>\d+)"
-
-#     with open(html_file, "r", encoding="utf-8") as f:
-#         soup = BeautifulSoup(f, "lxml")
-
-#     book_title = soup.head.title
-
-#     book_id = None
-#     for verse_span in soup.find_all("span"):
-#         if verse_span.get("data-usfm"):
-#             match = re.match(pattern, verse_span["data-usfm"])
-#             if match:
-#                 book_id = match.group("book_id")
-#                 chapter = match.group("chapter")
-#                 verse = match.group("verse")
-#                 text = verse_span.text
-
-#                 if book_id not in usfm_data:
-#                     usfm_data[book_id] = {}
-#                     print(f"Couldn't find book {book_id} in {usfm_data}")
-#                 if chapter not in usfm_data[book_id]:
-#                     usfm_data[book_id][chapter] = {}
-#                     print(f"Couldn't chapter {chapter} in {usfm_data[book_id]}")
-
-#                 usfm_data[book_id][chapter][verse] = text
-#                 print(f"Added {book_id} {chapter}:{verse}   {text} ")
-
-#     if not book_id:
-#         print(f"Warning: Could not parse book ID from {html_file}. HTML content:")
-#         print(soup.prettify())
-#         exit()
-
-#     if not book_title:
-#         print(f"Warning: Could not parse book title from {html_file}. HTML content:")
-#         print(soup.prettify())
-#         exit()
-
-#     return usfm_data
-
-
-# def parse_html(html_file, usfm_data):
-#     pattern = r"(?P<book_id>.{3})\.(?P<chapter>\d+).(?P<verse>\d+)"
-
-#     with open(html_file, "r", encoding="utf-8") as f:
-#         soup = BeautifulSoup(f, "lxml")
-
-#     book_title = soup.head.title.string.split(" | ")[0]
-
-#     book_id = None
-
-#     for i, verse_span in enumerate(soup.find_all("span", attrs={"data-usfm": True}),1):
-        
-#         match = re.match(pattern, verse_span["data-usfm"])
-#         if match:
-#             book_id = match.group("book_id")
-#             chapter = match.group("chapter")
-#             verse = match.group("verse")
-
-#             # Find the child span that contains the verse text
-#             text_span = verse_span.find(
-#                 "span",
-#                 class_=lambda value: value
-#                 and value.startswith("ChapterContent_content"),
-#             )
-#             if text_span:
-#                 text = text_span.text.strip()  # Remove any leading/trailing whitespace
-
-#                 if book_id not in usfm_data:
-#                     usfm_data[book_id] = {}
-#                 if chapter not in usfm_data[book_id]:
-#                     usfm_data[book_id][chapter] = {}
-#                 if verse in usfm_data[book_id][chapter]:
-#                     print(f"{i} Overwriting would happen here.")
-#                     #usfm_data[book_id][chapter][verse] = text
-#                 elif verse not in usfm_data[book_id][chapter]:
-#                     usfm_data[book_id][chapter][verse] = text
-#                     print(f"{i}  Added {book_id} {chapter}:{verse}   {text} ")
-#             else:
-#                 print(
-#                     f"Warning: Could not parse verse text from {verse_span}. HTML content:"
-#                 )
-#                 continue  # Skip this verse if its text couldn't be extracted
-
-#     return usfm_data
-
-
 def get_verse_text(verse_span):
     """
     Given a verse span, find all child spans with a class that starts with "ChapterContent_content",
     concatenate their text and return the result.
     """
     text_spans = verse_span.find_all("span", class_=lambda value: value and value.startswith("ChapterContent_content"))
-    text = ' '.join(span.text for span in text_spans)
+    text = ' '.join(span.text for span in text_spans).replace("   ", " ").replace("  "," ")
+
     return text.strip()  # Remove any leading/trailing whitespace
+
 
 def parse_html(html_file, usfm_data):
     pattern = r"(?P<book_id>.{3})\.(?P<chapter>\d+).(?P<verse>\d+)"
@@ -181,16 +123,14 @@ def parse_html(html_file, usfm_data):
     with open(html_file, "r", encoding="utf-8") as f:
         soup = BeautifulSoup(f, "lxml")
 
-    book_title = soup.head.title.string.split(" | ")[0]
-
     book_id = None
 
     for i, verse_span in enumerate(soup.find_all("span", attrs={"data-usfm": True}),1):
         match = re.match(pattern, verse_span["data-usfm"])
         if match:
             book_id = match.group("book_id")
-            chapter = match.group("chapter")
-            verse = match.group("verse")
+            chapter = int(match.group("chapter"))
+            verse = int(match.group("verse"))
             text = get_verse_text(verse_span)  # Extract the verse text
 
             if book_id not in usfm_data:
@@ -202,21 +142,13 @@ def parse_html(html_file, usfm_data):
             #    #usfm_data[book_id][chapter][verse] = text
             if verse not in usfm_data[book_id][chapter]:
                 usfm_data[book_id][chapter][verse] = text
-                print(f"{i}  Added {book_id} {chapter}:{verse}   {text} ")
+                #print(f"{i}  Added {book_id} {chapter}:{verse}   {text} ")
 
     if not book_id:
-        print(f"Warning: Could not parse book ID from {html_file}. HTML content:")
-        print(soup.prettify())
-        exit()
-    
-    if not book_title:
-        print(f"Warning: Could not parse book title from {html_file}. HTML content:")
-        print(soup.prettify())
-        exit()
+        print(f"Warning: Could not parse book ID from {html_file}. ")
+        return None
 
     return usfm_data
-
-
 
 
 def check_html_file(html_file):
@@ -230,14 +162,15 @@ def check_html_file(html_file):
         return True
 
 
-def save_to_usfm(book_id, book_title, usfm_data, output_file):
-
+def save_to_usfm(book_id, usfm_data, output_file):
+    #print(usfm_data["GEN"][1])
+    #exit()
     with open(output_file, "w", encoding="utf-8") as f:
-        f.write(f"\\id {book_id} - {book_title}\n")
-        for chapter in sorted(usfm_data, key=int):
+        f.write(f"\\id {book_id}\n")
+        for chapter in sorted(usfm_data[book_id], key=int):
             f.write(f"\\c {chapter}\n")
-            for verse in sorted(usfm_data[chapter], key=int):
-                f.write(f"\\v {verse} {usfm_data[chapter][verse]}\n")
+            for verse in sorted(usfm_data[book_id][chapter], key=int):
+                f.write(f"\\v {verse} {usfm_data[book_id][chapter][verse]}\n")
 
 
 def custom_sort(html_file):
@@ -266,70 +199,55 @@ def check_files(input_folder):
     return failed_files
 
 
-def process_book(input_folder, output_folder, book):
-
-    # Output USFM data for each book
-    filenames = {
-        book: f"{i:02}{book}.sfm" for i, book in enumerate(get_max_chapters().keys(), 1)
-    }
-    output_file = Path(output_folder) / filenames[book]
-
-    html_files = [
-        html_file
-        for html_file in Path(input_folder).glob(f"{book}_*.htm")
-        if html_file.is_file
-    ]
+def process_book(input_folder, output_file, book):
 
     usfm_data = {}
 
+    # Iterate over all HTML files in the input directory
+    html_files = [
+        html_file for html_file in Path(input_folder).glob(f"{book}*.htm") if html_file.is_file
+    ]
+    
     # Now use this custom_sort function to sort the html_files.
-    html_files = sorted(html_files, key=custom_sort)
+    sorted_html_files = sorted(html_files, key=custom_sort)
 
-    print(f"Found {len(html_files)} html files to process for book {book}.")
+    #print(f"Found {len(sorted_html_files)} html files to process for book {book}.")
 
-    for html_file in html_files:
+    for sorted_html_file in sorted_html_files:
         # print(f"processing file : {html_file}")
 
-        usfm_data = parse_html(html_file, usfm_data)
+        usfm_data = parse_html(sorted_html_file, usfm_data)
 
-        print(usfm_data)
-        exit()
+        #print(usfm_data)
+        #exit()
 
-        # Merge book data into main data dictionary
-
-        for chapter, verses in book_data[book_id].items():
-            if chapter not in usfm_data[book_id]:
-                usfm_data[book_id][chapter] = {}
-            for verse, text in verses.items():
-                usfm_data[book_id][chapter][verse] = text
-
-        # Store book title
-        book_titles[book_id] = book_title
-
-    # Output USFM data for each book
-    filenames = {
-        book: f"{i:02}{book}.sfm" for i, book in enumerate(get_max_chapters().keys(), 1)
-    }
-
-    for book_id, book_data in usfm_data.items():
-
-        output_file = Path(output_folder) / filenames[book_id]
-        save_to_usfm(book_id, book_titles[book_id], book_data, output_file)
+    if usfm_data is not None:
+        # Output USFM data for book
+        save_to_usfm(book, usfm_data, output_file)
 
 
 def main():
-    project_id = "ABTAG01"
-    input_path = Path(f"E:/Work/Pilot_projects/Ayta Mag Indi/{project_id}")
-    save_path = Path(f"E:/Work/Pilot_projects/Ayta Mag Indi/projects/{project_id}")
+
+    project_id = "loz"
+    downloaded_html_folder = Path(f"E:/Work/Pilot_projects/Lozi/html")
+    sfm_folder = Path(f"E:/Work/Pilot_projects/Lozi/{project_id}") 
+    max_chapters = get_max_chapters()
 
     # Ensure the output directory exists
-    os.makedirs(save_path, exist_ok=True)
+    os.makedirs(sfm_folder, exist_ok=True)
+    
+    files = get_files_from_folder(downloaded_html_folder, "htm")
+    print(f"Found {len(files)} usfm files ")
+    book_set = {file.name[:3] for file in files}
+    books = [book for book in max_chapters.keys() if book in book_set]
 
-    # Check html files.
-    # failed_files = check_files(input_path)
-
-    # Sample usage:
-    process_book(input_path, save_path, "GEN")
+    print(books)
+    
+    for book in books:
+        book_number = list(max_chapters.keys()).index(book) + 1
+        sfm_file = sfm_folder / f"{book_number:02}{book}.sfm"
+        print(f"Process book: {book_number:02}_{book} to save as {sfm_file}")
+        process_book(downloaded_html_folder, sfm_file, book)
 
 
 if __name__ == "__main__":
